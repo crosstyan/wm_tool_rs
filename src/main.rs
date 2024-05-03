@@ -65,7 +65,7 @@ fn log_uart(mut port: TTYPort) {
         match port.read(buf.as_mut_slice()) {
             Ok(t) => {
                 for i in 0..t {
-                    print!("{:02X} ", buf[i]);
+                    print!("{:02X}({}) ", buf[i], buf[i] as char);
                 }
                 println!();
             }
@@ -75,12 +75,12 @@ fn log_uart(mut port: TTYPort) {
     }
 }
 
-fn try_reset(port: &mut TTYPort) -> Result<()> {
+fn rts_reset(port: &mut TTYPort) -> Result<()> {
     // DTR 0
     // RTS 1
     port.write_data_terminal_ready(false)?;
     port.write_request_to_send(true)?;
-    const SLEEP_TIME: Duration = Duration::from_millis(50);
+    const SLEEP_TIME: Duration = Duration::from_millis(10);
     std::thread::sleep(SLEEP_TIME);
     // DTR 1
     // RTS 0
@@ -266,7 +266,7 @@ enum PacketId {
     Nak,
 }
 
-fn try_write(port: &mut TTYPort, data: &[u8]) -> Result<PacketId> {
+fn write_and_wait_ack(port: &mut TTYPort, data: &[u8]) -> Result<PacketId> {
     let mut buf: [u8; 1] = [0];
     port.clear(ClearBuffer::Input)?;
     port.write(data)?;
@@ -287,7 +287,7 @@ fn write_image<T: Read>(port: &mut TTYPort, reader: &mut T) -> Result<()> {
         const MAX_RETRY: usize = 10;
         let mut retry = 0;
         loop {
-            let id = try_write(port, frame)?;
+            let id = write_and_wait_ack(port, frame)?;
             match id {
                 PacketId::Ack => {
                     break;
@@ -305,51 +305,78 @@ fn write_image<T: Read>(port: &mut TTYPort, reader: &mut T) -> Result<()> {
         }
         Ok(())
     };
+
+    let send_end_of_transmission = |port: &mut TTYPort| -> Result<()> {
+        const MAX_RETRY: usize = 10;
+        let mut retry = 0;
+        loop {
+            let mut buf: [u8; 1] = [0];
+            port.write(&[XMODEM_EOT])?;
+            port.flush()?;
+            port.read_exact(&mut buf)?;
+            if buf[0] == XMODEM_ACK {
+                break;
+            } else {
+                retry += 1;
+                if retry == MAX_RETRY {
+                    bail!(format!(
+                        "Failed to send end of transmission: exceeded max retry count ({})",
+                        MAX_RETRY
+                    ));
+                }
+            }
+        }
+        Ok(())
+    };
+
     loop {
+        println!("Pack: {}", pack_counter);
         let (frame, eof) = generate_frame(reader, pack_counter)?;
         write_frame(port, &frame)?;
         pack_counter = pack_counter.wrapping_add(1);
-        println!("Pack: {}", pack_counter);
         if eof {
             break;
         }
     }
 
-    loop {
-        let buf: [u8; 1] = [XMODEM_EOT];
-        port.write(&buf)?;
-        let mut buf: [u8; 1] = [0];
-        port.read_exact(&mut buf)?;
-        let c = buf[0];
-        if c == XMODEM_ACK {
-            break;
-        } else {
-            dbg!(c);
-        }
-    }
-
+    send_end_of_transmission(port)?;
     Ok(())
 }
 
-fn main() {
+// https://www.cnblogs.com/milton/p/15609031.html
+// https://www.cnblogs.com/milton/p/15621540.html
+fn cmd_reset(port: &mut TTYPort) -> Result<()> {
+    const CMD: [u8; 9] = [0x21, 0x06, 0x00, 0xc7, 0x7c, 0x3f, 0x00, 0x00, 0x00];
+    port.write(&CMD)?;
+    port.flush()?;
+    Ok(())
+}
+
+fn main() -> Result<()> {
     let mut port: TTYPort = serialport::new("/dev/ttyUSB0", 115_200)
         .timeout(Duration::from_millis(30_000))
-        .open_native()
-        .expect("Failed to open port");
-    try_reset(&mut port).expect("Failed to reset");
-    escape_2_uart(&mut port, Duration::from_millis(500)).expect("Failed to escape");
-    chk_magics(&mut port).expect("Failed to check magic");
-    let mac = query_mac(&mut port).expect("Failed to query mac");
+        .open_native()?;
+    rts_reset(&mut port)?;
+    escape_2_uart(&mut port, Duration::from_millis(500))?;
+    chk_magics(&mut port)?;
+    let mac = query_mac(&mut port)?;
     println!(
         "MAC: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
     let image_path = "/home/crosstyan/Code/wm806-cmake/build/demo.fls";
-    let mut image_file = File::open(image_path).expect("Failed to open image file");
-    // erase_image(&mut port).expect("Failed to erase image");
-    set_download_speed(&mut port, 2000000).expect("Failed to set download speed");
-    // set_download_speed(&mut port, 115200).expect("Failed to set download speed");
-    write_image(&mut port, &mut image_file).expect("Failed to write image");
-    try_reset(&mut port).expect("Failed to reset");
+    // let image_path = "/home/crosstyan/Code/wm-sdk-w806/bin/W806/W806.fls";
+    let mut image_file = File::open(image_path)?;
+    erase_image(&mut port)?;
+    chk_magics(&mut port)?;
+    set_download_speed(&mut port, 2000000)?;
+    write_image(&mut port, &mut image_file)?;
+    std::thread::sleep(Duration::from_secs(1));
+    rts_reset(&mut port)?;
     println!("Done");
+    port.set_baud_rate(115200)?;
+    std::thread::sleep(Duration::from_millis(500));
+    cmd_reset(&mut port)?;
+    log_uart(port);
+    Ok(())
 }
