@@ -80,7 +80,7 @@ fn try_reset(port: &mut TTYPort) -> Result<()> {
     // RTS 1
     port.write_data_terminal_ready(false)?;
     port.write_request_to_send(true)?;
-    const SLEEP_TIME: Duration = Duration::from_millis(100);
+    const SLEEP_TIME: Duration = Duration::from_millis(50);
     std::thread::sleep(SLEEP_TIME);
     // DTR 1
     // RTS 0
