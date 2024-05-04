@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 use anyhow::Ok;
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
@@ -6,7 +6,7 @@ use std::io::prelude::*;
 use std::io::Read;
 use std::io::Write;
 use std::time::Duration;
-use serialport::SerialPort;
+use serialport::{available_ports, SerialPort};
 use clap::Parser;
 use clap::builder::TypedValueParser;
 
@@ -26,7 +26,7 @@ struct Args {
     /// Baud rate for the normal communication (protocol handshake etc.)
     wire_baud_rate: u32,
     // https://github.com/clap-rs/clap/discussions/3855
-    #[arg(short, long, default_value = "2000000", value_parser = clap::builder::PossibleValuesParser::new(DOWNLOAD_BAUD_RATES).map(|s| s.parse::<u32>().unwrap()))]
+    #[arg(short, long, default_value = "2000000", value_parser = clap::builder::PossibleValuesParser::new(DOWNLOAD_BAUD_RATES).map(| s | s.parse::< u32 > ().unwrap()))]
     /// Baud rate for the image download
     download_baud_rate: u32,
     #[arg(short, long)]
@@ -44,7 +44,11 @@ fn main() -> Result<()> {
     let port_ = serialport::new(args.port.clone(), args.wire_baud_rate).open_native();
     let mut port = match port_ {
         Ok(port) => port,
-        Err(e) => bail!("Failed to open serial port `{}` since {}", &args.port, e),
+        Err(e) => {
+            let ports = available_ports().unwrap_or(vec![]);
+            warn!("Available ports: {:#?}", ports);
+            bail!("Failed to open serial port `{}` since {}", &args.port, e)
+        }
     };
     rts_reset(&mut port)?;
     escape_2_uart(&mut port, Duration::from_millis(500))?;
