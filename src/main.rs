@@ -1,3 +1,4 @@
+use log::info;
 use anyhow::Ok;
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
@@ -7,6 +8,7 @@ use std::io::Write;
 use std::time::Duration;
 use serialport::SerialPort;
 use clap::Parser;
+use clap::builder::TypedValueParser;
 
 pub mod flash;
 
@@ -24,7 +26,7 @@ struct Args {
     /// Baud rate for the normal communication (protocol handshake etc.)
     wire_baud_rate: u32,
     // https://github.com/clap-rs/clap/discussions/3855
-    #[arg(short, long, default_value = "2000000", value_parser = clap::builder::PossibleValuesParser::new(DOWNLOAD_BAUD_RATES))]
+    #[arg(short, long, default_value = "2000000", value_parser = clap::builder::PossibleValuesParser::new(DOWNLOAD_BAUD_RATES).map(|s| s.parse::<u32>().unwrap()))]
     /// Baud rate for the image download
     download_baud_rate: u32,
     #[arg(short, long)]
@@ -33,30 +35,48 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    use std::result::Result::Ok;
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "wm_tool=debug");
+    }
+    env_logger::init();
     let args = Args::parse();
-    let mut port = serialport::new(args.port, args.wire_baud_rate)
-        .timeout(Duration::from_millis(30_000))
-        .open_native()?;
+    let port_ = serialport::new(args.port.clone(), args.wire_baud_rate).open_native();
+    let mut port = match port_ {
+        Ok(port) => port,
+        Err(e) => bail!("Failed to open serial port `{}` since {}", &args.port, e),
+    };
     rts_reset(&mut port)?;
     escape_2_uart(&mut port, Duration::from_millis(500))?;
     chk_magics(&mut port)?;
     let mac = query_mac(&mut port)?;
-    println!(
+    info!(
         "MAC: {:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
     let image_path = args.image_path;
+    info!("Image path: {}", image_path);
     let mut image_file = File::open(image_path)?;
+    let total_bytes = image_file.metadata()?.len();
+    let expected_iterations = (total_bytes as f32 / XMODEM_DATA_SIZE as f32).ceil() as u64;
+
+    info!("Image size: {} bytes", total_bytes);
+    info!("Expected iterations: {}", expected_iterations);
     erase_image(&mut port)?;
     chk_magics(&mut port)?;
     set_download_speed(&mut port, args.download_baud_rate)?;
-    write_image(&mut port, &mut image_file)?;
-    std::thread::sleep(Duration::from_secs(1));
+    let bar = indicatif::ProgressBar::new(expected_iterations);
+    write_image(&mut port, &mut image_file, |_| {
+        bar.inc(1);
+    })?;
+    bar.finish();
+    println!();
+    info!("Image written successfully");
+
+    std::thread::sleep(Duration::from_millis(100));
     rts_reset(&mut port)?;
-    println!("Done");
+    info!("Redirect the UART output from {}", &args.port);
     port.set_baud_rate(args.wire_baud_rate)?;
-    std::thread::sleep(Duration::from_millis(500));
-    cmd_reset(&mut port)?;
     log_uart(port);
     Ok(())
 }

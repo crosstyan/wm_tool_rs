@@ -1,6 +1,6 @@
+use log::{info, debug, warn, error};
 use anyhow::Ok;
 use anyhow::{anyhow, bail, Result};
-use crc16::{State, AUG_CCITT};
 use serialport::{available_ports, ClearBuffer, SerialPort};
 use std::io::prelude::*;
 use std::io::Read;
@@ -60,13 +60,17 @@ pub fn log_uart<T: SerialPort>(mut port: T) {
         let mut buf: Vec<u8> = vec![0; 100];
         match port.read(buf.as_mut_slice()) {
             Ok(t) => {
-                for i in 0..t {
-                    print!("{:02X}({}) ", buf[i], buf[i] as char);
+                if t == 0 {
+                    continue;
                 }
-                println!();
+                let s = std::str::from_utf8(&buf[..t]);
+                match s {
+                    Ok(s) => print!("{}", s),
+                    Err(e) => warn!("{:?}", e),
+                }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-            Err(e) => eprintln!("{:?}", e),
+            Err(e) => warn!("{:?}", e),
         }
     }
 }
@@ -129,7 +133,7 @@ pub fn chk_magics<T: Write + Read>(port: &mut T) -> Result<()> {
         } else {
             failed_count += 1;
             count = 0;
-            dbg!(c);
+            debug!("{}", c.escape_default());
             if failed_count == MAX_FAILED_COUNT {
                 bail!(format!(
                     "Failed to check magic: exceeded max failed count ({})",
@@ -277,7 +281,10 @@ fn write_and_wait_ack<T: SerialPort>(port: &mut T, data: &[u8]) -> Result<Packet
     }
 }
 
-pub fn write_image<T: SerialPort, U: Read>(port: &mut T, reader: &mut U) -> Result<()> {
+pub fn write_image<T: SerialPort, U: Read, F: FnMut(u8)>(port: &mut T,
+                                                         reader: &mut U,
+                                                         mut iter: F,
+) -> Result<()> {
     let mut pack_counter: u8 = 1;
     let write_frame = |port: &mut T, frame: &[u8]| -> Result<()> {
         const MAX_RETRY: usize = 10;
@@ -326,9 +333,9 @@ pub fn write_image<T: SerialPort, U: Read>(port: &mut T, reader: &mut U) -> Resu
     };
 
     loop {
-        println!("Pack: {}", pack_counter);
         let (frame, eof) = generate_frame(reader, pack_counter)?;
         write_frame(port, &frame)?;
+        iter(pack_counter);
         pack_counter = pack_counter.wrapping_add(1);
         if eof {
             break;

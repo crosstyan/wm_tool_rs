@@ -59,6 +59,9 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
+  <component name="RsExternalLinterProjectSettings">
+    <option name="runOnTheFly" value="true" />
+  </component>
   <component name="RunManager">
     <configuration name="Run" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
       <option name="command" value="run" />
@@ -89,7 +92,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1714803232984</updated>
-      <workItem from="1714803234243" duration="2670000" />
+      <workItem from="1714803234243" duration="6377000" />
     </task>
     <servers />
   </component>
