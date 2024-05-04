@@ -244,16 +244,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adad44e29e4c806119491a7f06f03de4d1af22c3a680dd47f1e6e179439d1f56"
 
 [[package]]
-name = "rr"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crc16",
- "serialport",
-]
-
-[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -430,3 +420,13 @@ name = "windows_x86_64_msvc"
 version = "0.52.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bec47e5bfd1bff0eeaf6d8b485cc1074891a197ab4225d504cb7a1ab88b02bf0"
+
+[[package]]
+name = "wm_tool_rs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crc16",
+ "serialport",
+]
