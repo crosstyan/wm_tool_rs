@@ -2,8 +2,6 @@ use anyhow::Ok;
 use anyhow::{anyhow, bail, Result};
 use crc16::{State, AUG_CCITT};
 use serialport::{available_ports, ClearBuffer, SerialPort};
-use std::collections::HashMap;
-use std::fs::File;
 use std::io::prelude::*;
 use std::io::Read;
 use std::io::Write;
@@ -40,9 +38,9 @@ const XMODEM_DATA_SIZE_STX: usize = 1024;
 const XMODEM_MAGIC_SIZE: usize = 1;
 const XMODEM_HEADER_SIZE: usize = XMODEM_MAGIC_SIZE + XMODEM_FRAME_ID_SIZE;
 const XMODEM_TAIL_SIZE: usize = XMODEM_CRC_SIZE;
-const XMODEM_FRAME_SIZE: usize = XMODEM_DATA_SIZE + XMODEM_HEADER_SIZE + XMODEM_TAIL_SIZE;
+pub const XMODEM_FRAME_SIZE: usize = XMODEM_DATA_SIZE + XMODEM_HEADER_SIZE + XMODEM_TAIL_SIZE;
 
-const XMODEM_DATA_SIZE: usize = if WM_TOOL_USE_1K_XMODEM {
+pub const XMODEM_DATA_SIZE: usize = if WM_TOOL_USE_1K_XMODEM {
     XMODEM_DATA_SIZE_STX
 } else {
     XMODEM_DATA_SIZE_SOH
