@@ -3,9 +3,10 @@ use anyhow::Ok;
 use anyhow::{anyhow, bail, Result};
 use serialport::{available_ports, ClearBuffer, SerialPort};
 use std::io::prelude::*;
-use std::io::Read;
+use std::io::{Read, BufRead};
 use std::io::Write;
 use std::time::Duration;
+use std::time::Instant;
 #[cfg(any(target_os = "windows"))]
 use serialport::COMPort;
 #[cfg(not(any(target_os = "windows")))]
@@ -56,8 +57,10 @@ pub fn log_uart<T: SerialPort>(mut port: T) {
     use std::result::Result::Ok;
     port.write_request_to_send(false)
         .expect("Failed to set RTS");
+    port.set_timeout(Duration::from_millis(10));
+    let start = Instant::now();
     loop {
-        let mut buf: Vec<u8> = vec![0; 100];
+        let mut buf: Vec<u8> = vec![0; 128];
         match port.read(buf.as_mut_slice()) {
             Ok(t) => {
                 if t == 0 {
@@ -65,7 +68,10 @@ pub fn log_uart<T: SerialPort>(mut port: T) {
                 }
                 let s = std::str::from_utf8(&buf[..t]);
                 match s {
-                    Ok(s) => print!("{}", s),
+                    Ok(s) => {
+                        let e = start.elapsed();
+                        println!("{:?} `{}`", e, s.escape_default());
+                    },
                     Err(e) => warn!("{:?}", e),
                 }
             }

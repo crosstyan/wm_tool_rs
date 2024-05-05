@@ -66,8 +66,6 @@ fn main() -> Result<()> {
 
     info!("Image size: {} bytes", total_bytes);
     info!("Expected iterations: {}", expected_iterations);
-    erase_image(&mut port)?;
-    chk_magics(&mut port)?;
     set_download_speed(&mut port, args.download_baud_rate)?;
     let bar = indicatif::ProgressBar::new(expected_iterations);
     write_image(&mut port, &mut image_file, |_| {
